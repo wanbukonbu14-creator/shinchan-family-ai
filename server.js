@@ -100,12 +100,12 @@ app.post("/api/chat", async (req, res) => {
 
     if (mode === "aiko") {
       aikoReply = await callGemini(messages, AIKO_PROMPT);
-      return res.json { ok: true, aiko: aikoReply };
+      return res.json( { ok: true, aiko: aikoReply });
     }
 
     if (mode === "aise") {
       aiseReply = await callOpenAI(messages, AISE_PROMPT);
-      return res.json { ok: true, aise: aiseReply };
+      return res.json ({ ok: true, aise: aiseReply });
     }
 
     // 姉妹モード (愛子 → その回答を受けて愛生)
@@ -120,12 +120,13 @@ app.post("/api/chat", async (req, res) => {
 
     aiseReply = await callOpenAI(sisterContextMessages, aiseSisterPrompt);
 
-    return res.json {
+    return res.json ({
       ok: true,
       aiko: aikoReply,
       aise: aiseReply
-    };
-  } catch (err) {
+});  
+    } catch (er
+           r) {
     console.error(err);
     res.status(500).json({ ok: false, error: err.message });
   }

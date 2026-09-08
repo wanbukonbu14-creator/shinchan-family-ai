@@ -125,8 +125,7 @@ app.post("/api/chat", async (req, res) => {
       aiko: aikoReply,
       aise: aiseReply
 });  
-    } catch (er
-           r) {
+    } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, error: err.message });
   }

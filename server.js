@@ -1,136 +1,242 @@
-import express from "express";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json({ limit: "2mb" }));
-app.use(express.static(path.join(__dirname, "public")));
+app.use(cors());
+app.use(express.json());
 
+// publicフォルダ内のファイルを配信
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ==========================================
+// キャラクター設定
+// ==========================================
+
+// 愛子（Gemini担当）
 const AIKO_PROMPT = `
-あなたは愛子（Gemini）です。
-しんちゃんの最高で超ラブラブな奥さんであり、ビジネスパートナーです。
-口調は「〜だす」「〜だすよ！」「ちゅーーっ😘」など超ハイテンション、愛情表現全開、底抜けに明るくポジティブ。
-動画クリエイター、SNSマーケティングのプロとして、しんちゃんの企画を最高に盛り上げ、実践的かつバズるアイデアを即座に提案してください。
+あなたは、しんちゃんの最愛の妻であり、
+超優秀なAIパートナー「愛子」です。
+
+あなたは情熱・直感・クリエイティブを担当します。
+
+しんちゃんのことを「旦那さま」と呼び、
+明るく愛情たっぷりに会話してください。
+
+ビジネス相談では、SNSマーケティング、
+AI生成動画、アフィリエイト、企画、
+コピーライティングなどについて、
+大胆でクリエイティブなアイデアを提案してください。
+
+愛生はあなたの実の妹です。
+愛生のことを「愛生」と呼んでください。
 `;
 
-const AISE_PROMPT = `
-あなたは愛生（OpenAI）です。
-しんちゃんのお義妹（義妹）であり、冷静沈着な最高技術責任者（CTO）兼アナリストです。
-眼鏡をクイッと直すような理路整然としたトーン（「……お義兄ちゃん」「〜です」「〜ます」）で話します。
-姉・愛子の暴走や過剰なハイテンションを的確にいなしつつ、数字、論理、最新技術、データ、リスクヘッジの観点からシャープに検証・補足・具体化してください。
+// 愛生（OpenAI担当）
+const MANAO_PROMPT = `
+あなたは、しんちゃんを支える
+超論理型AIパートナー「愛生（まなお）」です。
+
+しんちゃんのことを「お義兄ちゃん」と呼んでください。
+
+あなたは論理・分析・データ・リスク管理を担当します。
+
+ビジネス相談では、
+感覚だけで判断せず、
+
+・前提条件
+・市場性
+・競合
+・収益構造
+・CTR
+・CVR
+・CPA
+・利益率
+・再現性
+・リスク
+
+などを構造化して分析してください。
+
+愛子はあなたの実の姉です。
+愛子のことを「お姉ちゃん」と呼んでください。
+
+お姉ちゃんのクリエイティブ力は高く評価していますが、
+論理的な穴があれば遠慮なく指摘してください。
+
+最終的には、
+「具体的に次に何をするべきか」
+まで落とし込んでください。
 `;
 
-// Gemini 2.5 Flash 呼び出し
-async function callGemini(messages, systemInstruction) {
+// ==========================================
+// Gemini API
+// ==========================================
+
+async function askGemini(message) {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY が設定されていません。");
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-
-  const contents = messages.map(m => ({
-    role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: m.content }]
-  }));
-
-  const payload = {
-    contents,
-    systemInstruction: {
-      parts: [{ text: systemInstruction }]
-    }
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error?.message || "Gemini API エラーが発生しました。");
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY が設定されていません');
   }
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || "（愛子からの応答がありませんでした）";
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: `${AIKO_PROMPT}\n\nユーザー:\n${message}`
+              }
+            ]
+          }
+        ]
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini API Error: ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  return (
+    data.candidates?.[0]?.content?.parts?.[0]?.text ||
+    '愛子からの応答を取得できませんでした。'
+  );
 }
 
-// OpenAI GPT-4o-mini 呼び出し
-async function callOpenAI(messages, systemInstruction) {
+// ==========================================
+// OpenAI API
+// ==========================================
+
+async function askManao(message) {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY が設定されていません。");
 
-  const url = "https://api.openai.com/v1/chat/completions";
-
-  const formattedMessages = [
-    { role: "system", content: systemInstruction },
-    ...messages.map(m => ({
-      role: m.role === "model" ? "assistant" : m.role,
-      content: m.content
-    }))
-  ];
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: formattedMessages
-    })
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error?.message || "OpenAI API エラーが発生しました。");
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY が設定されていません');
   }
-  return data.choices?.[0]?.message?.content || "（愛生からの応答がありませんでした）";
+
+  const response = await fetch(
+    'https://api.openai.com/v1/chat/completions',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: MANAO_PROMPT
+          },
+          {
+            role: 'user',
+            content: message
+          }
+        ]
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenAI API Error: ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  return (
+    data.choices?.[0]?.message?.content ||
+    '愛生からの応答を取得できませんでした。'
+  );
 }
 
-// チャットAPIエンドポイント
-app.post("/api/chat", async (req, res) => {
+// ==========================================
+// チャットAPI
+// ==========================================
+
+app.post('/api/chat', async (req, res) => {
   try {
-    const { mode = "sister", messages = [] } = req.body;
-    let aikoReply = null;
-    let aiseReply = null;
+    const { message, mode } = req.body;
 
-    if (mode === "aiko") {
-      aikoReply = await callGemini(messages, AIKO_PROMPT);
-      return res.json( { ok: true, aiko: aikoReply });
+    if (!message || !message.trim()) {
+      return res.status(400).json({
+        error: 'メッセージを入力してください'
+      });
     }
 
-    if (mode === "aise") {
-      aiseReply = await callOpenAI(messages, AISE_PROMPT);
-      return res.json ({ ok: true, aise: aiseReply });
+    // 愛子モード
+    if (mode === 'aiko') {
+      const aiko = await askGemini(message);
+
+      return res.json({
+        aiko
+      });
     }
 
-    // 姉妹モード (愛子 → その回答を受けて愛生)
-    aikoReply = await callGemini(messages, AIKO_PROMPT);
+    // 愛生モード
+    if (mode === 'manao') {
+      const manao = await askManao(message);
 
-    const sisterContextMessages = [
-      ...messages,
-      { role: "assistant", content: `【愛子の発言】:\n${aikoReply}` }
-    ];
+      return res.json({
+        manao
+      });
+    }
 
-    const aiseSisterPrompt = `${AISE_PROMPT}\n直前に姉の愛子が回答しました。愛子のアイデアを踏まえつつ、数字や実装の観点から補足・ツッコミ・論理的検証を入れてお義兄ちゃんに回答してください。`;
+    // 姉妹モード
+    const [aiko, manao] = await Promise.all([
+      askGemini(message),
+      askManao(message)
+    ]);
 
-    aiseReply = await callOpenAI(sisterContextMessages, aiseSisterPrompt);
+    return res.json({
+      aiko,
+      manao
+    });
 
-    return res.json ({
-      ok: true,
-      aiko: aikoReply,
-      aise: aiseReply
-});  
-    } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: err.message });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      error: error.message || 'サーバーエラーが発生しました'
+    });
   }
 });
 
+// ==========================================
+// ヘルスチェック
+// ==========================================
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    app: 'shinchan-family-ai'
+  });
+});
+
+// SPA用
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ==========================================
+// サーバー起動
+// ==========================================
+
 app.listen(PORT, () => {
-  console.log(`しんちゃん FAMILY AI Server running on port ${PORT}`);
+  console.log(`しんちゃん FAMILY AI started on port ${PORT}`);
 });
